@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -40,15 +42,25 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 禁止访问子目录
-	if strings.Count(cleanedPath, "/") > 1 {
-		http.Error(w, "Forbidden", http.StatusForbidden)
+	// 处理根路径请求
+	if cleanedPath == "\\" {
+		if r.Method == "GET" {
+			// 显示上传页面
+			displayUploadPage(w)
+		} else if r.Method == "POST" {
+			// 处理文件上传
+			imgDir := filepath.Join(currentDir, "IMG")
+			os.MkdirAll(imgDir, os.ModePerm) // 确保IMG目录存在
+			handleFileUpload(w, r, imgDir)
+		} else {
+			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		}
 		return
 	}
 
-	// 处理根路径请求
-	if cleanedPath == "/" {
-		handle404(w, currentDir)
+	// 禁止访问子目录
+	if strings.Count(cleanedPath, "/") > 1 {
+		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 
@@ -59,6 +71,8 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 检查文件是否存在
+	imgDir := filepath.Join(currentDir, "IMG")
+	fullPath = filepath.Join(imgDir, cleanedPath)
 	if _, err := os.Stat(fullPath); err == nil {
 		info, _ := os.Stat(fullPath)
 		if info.IsDir() {
@@ -79,6 +93,151 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	// 文件不存在
 	handle404(w, currentDir)
+}
+
+// 显示上传页面
+func displayUploadPage(w http.ResponseWriter) {
+	html := `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload Image</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f8f9fa;
+        }
+        .upload-container {
+            text-align: center;
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            width: 90%;
+            max-width: 500px;
+        }
+        .custom-file-input {
+            cursor: pointer;
+        }
+        .custom-file-label {
+            cursor: pointer;
+        }
+        .custom-file-label::after {
+            content: "Browse";
+            background-color: #007bff;
+            color: white;
+            border-radius: 0 0.25rem 0.25rem 0;
+        }
+        .custom-file-label:hover::after {
+            background-color: #0056b3;
+        }
+        /* 媒体查询，适应手机端 */
+        @media (max-width: 768px) {
+            .upload-container {
+                padding: 15px;
+            }
+            .custom-file-label::after {
+                font-size: 14px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="upload-container">
+        <h2>Upload Image</h2>
+        <form id="uploadForm" enctype="multipart/form-data" method="post">
+            <div class="custom-file mb-3">
+                <input type="file" class="custom-file-input" id="imageFile" name="imageFile" accept=".jpg,.jpeg,.png,.gif,.webp,.tiff,.tif,.bmp,.ico,.svg,.heic,.heif,.jfif,.pjpeg,.pjpg,.avif,.svgz,.ico,.cur,.xbm,.webp,.psd,.ai,.eps">
+                <label class="custom-file-label" for="imageFile">Choose file</label>
+            </div>
+            <div class="form-group">
+                <img id="preview" src="#" alt="Preview" style="display:none;max-width:100%;">
+            </div>
+            <button type="submit" class="btn btn-primary">Upload</button>
+        </form>
+    </div>
+    <script>
+        document.getElementById('imageFile').addEventListener('change', function(event) {
+            var file = event.target.files[0];
+            if (file) {
+                var reader = new FileReader();
+                reader.onload = function(e) {
+                    document.getElementById('preview').src = e.target.result;
+                    document.getElementById('preview').style.display = 'block';
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+    </script>
+</body>
+</html>
+`
+	w.Header().Set("Content-Type", "text/html")
+	w.Write([]byte(html))
+}
+
+// 处理文件上传
+func handleFileUpload(w http.ResponseWriter, r *http.Request, currentDir string) {
+	err := r.ParseMultipartForm(10 << 20) // 10 MB max memory
+	if err != nil {
+		http.Error(w, "Unable to parse form", http.StatusBadRequest)
+		return
+	}
+
+	file, handler, err := r.FormFile("imageFile")
+	if err != nil {
+		http.Error(w, "Error retrieving the file", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	ext := strings.ToLower(filepath.Ext(handler.Filename))
+	if !isAllowedExtension(ext) {
+		http.Error(w, "Invalid file type", http.StatusBadRequest)
+		return
+	}
+
+	// 计算文件哈希
+	hash := md5.New()
+	_, err = io.Copy(hash, file)
+	if err != nil {
+		http.Error(w, "Unable to calculate file hash", http.StatusInternalServerError)
+		return
+	}
+	fileHash := hex.EncodeToString(hash.Sum(nil))
+
+	newFilename := fmt.Sprintf("%s%s", fileHash, ext)
+	newPath := filepath.Join(currentDir, newFilename)
+
+	// 重新打开文件，因为计算哈希后文件指针已经到了文件末尾
+	file, handler, err = r.FormFile("imageFile")
+	if err != nil {
+		http.Error(w, "Error retrieving the file", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	dst, err := os.Create(newPath)
+	if err != nil {
+		http.Error(w, "Unable to create the file for writing", http.StatusInternalServerError)
+		return
+	}
+	defer dst.Close()
+
+	_, err = io.Copy(dst, file)
+	if err != nil {
+		http.Error(w, "Unable to save file", http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, "/"+newFilename, http.StatusSeeOther)
 }
 
 func handle404(w http.ResponseWriter, currentDir string) {
