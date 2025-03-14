@@ -9,15 +9,19 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/pquerna/otp/totp" // 引入TOTP库
 )
 
 const (
 	// 扩展后的图片扩展名列表
 	allowedExts = ".jpg|.jpeg|.png|.gif|.webp|.tiff|.tif|.bmp|.ico|.svg|.heic|.heif|.jfif|.pjpeg|.pjpg|.avif|.svgz|.ico|.cur|.xbm|.webp|.psd|.ai|.eps"
+	totpKeyFile = "totp.key"
 )
 
 func main() {
 	http.HandleFunc("/", handleRequest)
+	http.HandleFunc("/setup-totp", setupTOTP)
 	fmt.Println("Server started on :8080")
 	err := http.ListenAndServe(":8080", nil)
 	if err != nil {
@@ -29,6 +33,12 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 	currentDir, err := os.Getwd()
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	// 检查totp.key文件是否存在
+	if !fileExists(filepath.Join(currentDir, totpKeyFile)) {
+		http.Redirect(w, r, "/setup-totp", http.StatusSeeOther)
 		return
 	}
 
@@ -51,6 +61,28 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 			// 处理文件上传
 			imgDir := filepath.Join(currentDir, "IMG")
 			os.MkdirAll(imgDir, os.ModePerm) // 确保IMG目录存在
+
+			// 获取TOTP密码
+			totpCode := r.FormValue("totp")
+			if totpCode == "" {
+				http.Error(w, "TOTP code is required", http.StatusBadRequest)
+				return
+			}
+
+			// 读取TOTP密钥
+			key, err := readTOTPKey(filepath.Join(currentDir, totpKeyFile))
+			if err != nil {
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				return
+			}
+
+			// 验证TOTP密码
+			valid := totp.Validate(totpCode, key)
+			if !valid {
+				http.Error(w, "Invalid TOTP code", http.StatusUnauthorized)
+				return
+			}
+
 			handleFileUpload(w, r, imgDir)
 		} else {
 			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
@@ -160,6 +192,9 @@ func displayUploadPage(w http.ResponseWriter) {
             <div class="form-group">
                 <img id="preview" src="#" alt="Preview" style="display:none;max-width:100%;">
             </div>
+            <div class="form-group">
+                <input type="text" class="form-control" id="totp" name="totp" placeholder="Enter TOTP code">
+            </div>
             <button type="submit" class="btn btn-primary">Upload</button>
         </form>
     </div>
@@ -268,4 +303,120 @@ func isAllowedExtension(ext string) bool {
 		}
 	}
 	return false
+}
+
+// 检查文件是否存在
+func fileExists(filename string) bool {
+	info, err := os.Stat(filename)
+	if os.IsNotExist(err) {
+		return false
+	}
+	return !info.IsDir()
+}
+
+// 读取TOTP密钥
+func readTOTPKey(filename string) (string, error) {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(data)), nil
+}
+
+// 设置TOTP页面
+func setupTOTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "POST" {
+		totpKey := r.FormValue("totpKey")
+		totpCode := r.FormValue("totpCode")
+
+		if totpKey == "" || totpCode == "" {
+			http.Error(w, "TOTP key and code are required", http.StatusBadRequest)
+			return
+		}
+
+		// 验证TOTP代码
+		valid := totp.Validate(totpCode, totpKey)
+		if !valid {
+			http.Error(w, "Invalid TOTP code", http.StatusUnauthorized)
+			return
+		}
+
+		// 保存TOTP密钥
+		err := os.WriteFile(totpKeyFile, []byte(totpKey), 0644)
+		if err != nil {
+			http.Error(w, "Unable to save TOTP key", http.StatusInternalServerError)
+			return
+		}
+
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	// 生成随机TOTP密钥
+	key, err := totp.Generate(totp.GenerateOpts{
+		Issuer:      "Go-SimpleImageSite",
+		AccountName: "user",
+	})
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	html := `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Setup TOTP</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f8f9fa;
+        }
+        .setup-container {
+            text-align: center;
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            width: 90%;
+            max-width: 500px;
+        }
+        .qr-code {
+            margin-bottom: 20px;
+        }
+        .totp-key {
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="setup-container">
+        <h2>Setup TOTP</h2>
+        <div class="qr-code" id="qrcode"></div>
+        <div class="totp-key">TOTP Key: ` + key.Secret() + `</div>
+        <form id="setupForm" method="post">
+            <input type="hidden" id="totpKey" name="totpKey" value="` + key.Secret() + `">
+            <div class="form-group">
+                <input type="text" class="form-control" id="totpCode" name="totpCode" placeholder="Enter TOTP code">
+            </div>
+            <button type="submit" class="btn btn-primary">Submit</button>
+        </form>
+    </div>
+    <script>
+        new QRCode(document.getElementById("qrcode"), "` + key.URL() + `");
+    </script>
+</body>
+</html>
+`
+	w.Header().Set("Content-Type", "text/html")
+	w.Write([]byte(html))
 }
