@@ -52,6 +52,8 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	fmt.Println(cleanedPath)
+
 	// 处理根路径请求
 	if cleanedPath == "\\" {
 		if r.Method == "GET" {
