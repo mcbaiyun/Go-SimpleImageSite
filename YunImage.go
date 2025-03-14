@@ -43,7 +43,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	path := r.URL.Path
-	cleanedPath := filepath.Clean(path)
+	cleanedPath := filepath.ToSlash(filepath.Clean(path))
 
 	// 确保路径在当前目录内
 	fullPath := filepath.Join(currentDir, cleanedPath)
@@ -52,10 +52,10 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Println(cleanedPath)
+	// fmt.Println(cleanedPath)
 
 	// 处理根路径请求
-	if cleanedPath == "\\" {
+	if cleanedPath == "/" {
 		if r.Method == "GET" {
 			// 显示上传页面
 			displayUploadPage(w)
