@@ -131,11 +131,11 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 func displayUploadPage(w http.ResponseWriter) {
 	html := `
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Upload Image</title>
+    <title>上传图片</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body {
@@ -162,7 +162,7 @@ func displayUploadPage(w http.ResponseWriter) {
             cursor: pointer;
         }
         .custom-file-label::after {
-            content: "Browse";
+            content: "浏览";
             background-color: #007bff;
             color: white;
             border-radius: 0 0.25rem 0.25rem 0;
@@ -183,19 +183,23 @@ func displayUploadPage(w http.ResponseWriter) {
 </head>
 <body>
     <div class="upload-container">
-        <h2>Upload Image</h2>
+        <h2>上传图片</h2>
         <form id="uploadForm" enctype="multipart/form-data" method="post">
             <div class="custom-file mb-3">
                 <input type="file" class="custom-file-input" id="imageFile" name="imageFile" accept=".jpg,.jpeg,.png,.gif,.webp,.tiff,.tif,.bmp,.ico,.svg,.heic,.heif,.jfif,.pjpeg,.pjpg,.avif,.svgz,.ico,.cur,.xbm,.webp,.psd,.ai,.eps">
-                <label class="custom-file-label" for="imageFile">Choose file</label>
+                <label class="custom-file-label" for="imageFile">选择文件</label>
             </div>
             <div class="form-group">
-                <img id="preview" src="#" alt="Preview" style="display:none;max-width:100%;">
+                <img id="preview" src="#" alt="预览" style="display:none;max-width:100%;">
             </div>
             <div class="form-group">
-                <input type="text" class="form-control" id="totp" name="totp" placeholder="Enter TOTP code">
+                <div class="input-group">
+                    <input type="text" class="form-control" id="totp" name="totp" placeholder="输入TOTP验证码">
+                    <div class="input-group-append">
+                        <button type="submit" class="btn btn-primary">上传</button>
+                    </div>
+                </div>
             </div>
-            <button type="submit" class="btn btn-primary">Upload</button>
         </form>
     </div>
     <script>
@@ -330,21 +334,21 @@ func setupTOTP(w http.ResponseWriter, r *http.Request) {
 		totpCode := r.FormValue("totpCode")
 
 		if totpKey == "" || totpCode == "" {
-			http.Error(w, "TOTP key and code are required", http.StatusBadRequest)
+			http.Error(w, "TOTP密钥和验证码是必需的", http.StatusBadRequest)
 			return
 		}
 
 		// 验证TOTP代码
 		valid := totp.Validate(totpCode, totpKey)
 		if !valid {
-			http.Error(w, "Invalid TOTP code", http.StatusUnauthorized)
+			http.Error(w, "无效的TOTP验证码", http.StatusUnauthorized)
 			return
 		}
 
 		// 保存TOTP密钥
 		err := os.WriteFile(totpKeyFile, []byte(totpKey), 0644)
 		if err != nil {
-			http.Error(w, "Unable to save TOTP key", http.StatusInternalServerError)
+			http.Error(w, "无法保存TOTP密钥", http.StatusInternalServerError)
 			return
 		}
 
@@ -358,17 +362,17 @@ func setupTOTP(w http.ResponseWriter, r *http.Request) {
 		AccountName: "user",
 	})
 	if err != nil {
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		http.Error(w, "内部服务器错误", http.StatusInternalServerError)
 		return
 	}
 
 	html := `
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Setup TOTP</title>
+    <title>设置TOTP</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
     <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
@@ -390,7 +394,7 @@ func setupTOTP(w http.ResponseWriter, r *http.Request) {
             max-width: 500px;
         }
         .qr-code>img {
-			display: inline!important;
+            display: inline!important;
             margin: 0 auto; /* 添加此行以使二维码居中 */
             margin-bottom: 20px;
         }
@@ -398,19 +402,33 @@ func setupTOTP(w http.ResponseWriter, r *http.Request) {
             margin-bottom: 20px;
             font-weight: bold;
         }
+        .verification {
+            margin-bottom: 20px;
+        }
+        .verification input, .verification button {
+            display: inline-block;
+            vertical-align: middle;
+        }
+        .verification input {
+            margin-right: 10px;
+        }
     </style>
 </head>
 <body>
     <div class="setup-container">
-        <h2>Setup TOTP</h2>
+        <h2>设置TOTP</h2>
         <div class="qr-code" id="qrcode"></div>
-        <div class="totp-key">TOTP Key: ` + key.Secret() + `</div>
+        <div class="totp-key">TOTP密钥: ` + key.Secret() + `</div>
         <form id="setupForm" method="post">
             <input type="hidden" id="totpKey" name="totpKey" value="` + key.Secret() + `">
-            <div class="form-group">
-                <input type="text" class="form-control" id="totpCode" name="totpCode" placeholder="Enter TOTP code">
+            <div class="verification form-group">
+                <div class="input-group">
+                    <input type="text" class="form-control" id="totpCode" name="totpCode" placeholder="输入TOTP验证码">
+                    <div class="input-group-append">
+                        <button type="submit" class="btn btn-primary">提交</button>
+                    </div>
+                </div>
             </div>
-            <button type="submit" class="btn btn-primary">Submit</button>
         </form>
     </div>
     <script>
