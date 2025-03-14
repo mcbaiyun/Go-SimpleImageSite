@@ -179,6 +179,11 @@ func displayUploadPage(w http.ResponseWriter) {
                 font-size: 14px;
             }
         }
+        .totp-hint {
+            font-size: 0.9em;
+            color: #6c757d;
+            margin-top: 5px;
+        }
     </style>
 </head>
 <body>
@@ -199,6 +204,7 @@ func displayUploadPage(w http.ResponseWriter) {
                         <button type="submit" class="btn btn-primary">上传</button>
                     </div>
                 </div>
+                <div class="totp-hint">提示：本上传页面受到2FA验证器保护，您需要输入对应的基于时间的一次性口令才能上传图片，如您遇到已丢失对应验证器或其他需要重置验证器的情况，请生成程序目录中的totp.key文件，然后您就可以设置一个新的验证器！</div>
             </div>
         </form>
     </div>
@@ -412,12 +418,20 @@ func setupTOTP(w http.ResponseWriter, r *http.Request) {
         .verification input {
             margin-right: 10px;
         }
+        .totp-intro {
+            margin-bottom: 20px;
+            font-size: 0.9em;
+            color: #6c757d;
+        }
     </style>
 </head>
 <body>
     <div class="setup-container">
         <h2>设置TOTP</h2>
-        <div class="qr-code" id="qrcode"></div>
+		<div class="totp-intro">
+            <p>TOTP（Time-based One-Time Password）是一种基于时间的一次性密码算法，用于提供两步验证。请使用Google Authenticator、Microsoft Authenticator等应用程序扫描下方二维码以设置TOTP。
+        </div>
+       <div class="qr-code" id="qrcode"></div>
         <div class="totp-key">TOTP密钥: ` + key.Secret() + `</div>
         <form id="setupForm" method="post">
             <input type="hidden" id="totpKey" name="totpKey" value="` + key.Secret() + `">
@@ -430,6 +444,7 @@ func setupTOTP(w http.ResponseWriter, r *http.Request) {
                 </div>
             </div>
         </form>
+        
     </div>
     <script>
         new QRCode(document.getElementById("qrcode"), "` + key.URL() + `");
