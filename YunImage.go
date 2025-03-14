@@ -184,6 +184,18 @@ func displayUploadPage(w http.ResponseWriter) {
             color: #6c757d;
             margin-top: 5px;
         }
+        /* 美化图片预览框并增加默认高度 */
+        #preview {
+            display: block;
+            max-width: 100%;
+            height: 300px; /* 增加默认高度 */
+			margin: 0 auto;
+            margin-top: 10px;
+            border: 1px dashed #ccc;
+            padding: 10px;
+            background-color: #f9f9f9;
+            object-fit: contain; /* 保持图片比例 */
+        }
     </style>
 </head>
 <body>
@@ -195,7 +207,7 @@ func displayUploadPage(w http.ResponseWriter) {
                 <label class="custom-file-label" for="imageFile">选择文件</label>
             </div>
             <div class="form-group">
-                <img id="preview" src="#" alt="预览" style="display:none;max-width:100%;">
+                <img id="preview" src="#" alt="预览" class="img-fluid"> <!-- 使用Bootstrap的img-fluid类 -->
             </div>
             <div class="form-group">
                 <div class="input-group">
@@ -215,9 +227,10 @@ func displayUploadPage(w http.ResponseWriter) {
                 var reader = new FileReader();
                 reader.onload = function(e) {
                     document.getElementById('preview').src = e.target.result;
-                    document.getElementById('preview').style.display = 'block';
                 };
                 reader.readAsDataURL(file);
+            } else {
+                document.getElementById('preview').src = "#";
             }
         });
     </script>
