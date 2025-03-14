@@ -218,7 +218,7 @@ func displayUploadPage(w http.ResponseWriter) {
                         <button type="submit" class="btn btn-primary">上传</button>
                     </div>
                 </div>
-                <div class="totp-hint">提示：本上传页面受到2FA验证器保护，您需要输入对应的基于时间的一次性口令才能上传图片，如您遇到已丢失对应验证器或其他需要重置验证器的情况，请生成程序目录中的totp.key文件，然后您就可以设置一个新的验证器！</div>
+                <div class="totp-hint">提示：本上传页面受到2FA验证器保护，您需要输入对应的基于时间的一次性口令才能上传图片，如您遇到已丢失对应验证器或其他需要重置验证器的情况，请手动删除程序目录中的totp.key文件，然后您就可以回到网页刷新并设置一个新的验证器！</div>
             </div>
         </form>
     </div>
