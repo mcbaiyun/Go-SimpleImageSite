@@ -50,6 +50,9 @@ jobs:
           asset_name: YunImage
           asset_content_type: application/octet-stream
 
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}  # 添加输出
+
   build-windows:
     runs-on: windows-latest  # 仅使用Windows操作系统
     needs: build-linux  # 确保在build-linux作业之后运行
