@@ -389,7 +389,9 @@ func setupTOTP(w http.ResponseWriter, r *http.Request) {
             width: 90%;
             max-width: 500px;
         }
-        .qr-code {
+        .qr-code>img {
+			display: inline!important;
+            margin: 0 auto; /* 添加此行以使二维码居中 */
             margin-bottom: 20px;
         }
         .totp-key {
