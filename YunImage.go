@@ -2,117 +2,111 @@ package main
 
 import (
 	"fmt"
-	"html/template"
 	"io"
-	"log"
 	"net/http"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
-	"time"
+)
+
+const (
+	// 扩展后的图片扩展名列表
+	allowedExts = ".jpg|.jpeg|.png|.gif|.webp|.tiff|.tif|.bmp|.ico|.svg|.heic|.heif|.jfif|.pjpeg|.pjpg|.avif|.svgz|.ico|.cur|.xbm|.webp|.psd|.ai|.eps"
 )
 
 func main() {
-	// 创建files目录
-	if err := os.MkdirAll("files", 0755); err != nil {
-		log.Fatal(err)
+	http.HandleFunc("/", handleRequest)
+	fmt.Println("Server started on :8080")
+	err := http.ListenAndServe(":8080", nil)
+	if err != nil {
+		panic(err)
 	}
-
-	http.HandleFunc("/yunimage", uploadPage)
-	http.HandleFunc("/yunupload-api", uploadHandler)
-	http.HandleFunc("/", imageHandler)
-
-	fmt.Println("Server running on :8080")
-	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
-// 上传页面
-func uploadPage(w http.ResponseWriter, r *http.Request) {
-	// 使用模板引擎渲染HTML
-	tmpl := template.Must(template.New("").Parse(`
-<!DOCTYPE html>
-<html>
-<head>
-    <title>简易图床</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-</head>
-<body>
-    <div class="container mt-5">
-        <h1 class="text-center">上传图片</h1>
-        <form action="/yunupload-api" method="POST" enctype="multipart/form-data" class="mt-4">
-            <div class="mb-3">
-                <input type="file" name="file" class="form-control" accept="image/*">
-            </div>
-            <button type="submit" class="btn btn-primary">上传</button>
-        </form>
-    </div>
-</body>
-</html>
-`))
-	tmpl.Execute(w, nil)
+func handleRequest(w http.ResponseWriter, r *http.Request) {
+	currentDir, err := os.Getwd()
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	path := r.URL.Path
+	cleanedPath := filepath.Clean(path)
+
+	// 确保路径在当前目录内
+	fullPath := filepath.Join(currentDir, cleanedPath)
+	if !strings.HasPrefix(fullPath, currentDir) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	// 禁止访问子目录
+	if strings.Count(cleanedPath, "/") > 1 {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	// 处理根路径请求
+	if cleanedPath == "/" {
+		handle404(w, currentDir)
+		return
+	}
+
+	// 禁止直接访问404.html
+	if filepath.Base(cleanedPath) == "404.html" {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	// 检查文件是否存在
+	if _, err := os.Stat(fullPath); err == nil {
+		info, _ := os.Stat(fullPath)
+		if info.IsDir() {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+
+		// 检查文件扩展名是否为图片类型
+		ext := strings.ToLower(filepath.Ext(cleanedPath))
+		if !isAllowedExtension(ext) {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+
+		http.ServeFile(w, r, fullPath)
+		return
+	}
+
+	// 文件不存在
+	handle404(w, currentDir)
 }
 
-// 上传处理
-func uploadHandler(w http.ResponseWriter, r *http.Request) {
-	r.ParseMultipartForm(10 << 20)
-	file, handler, err := r.FormFile("file")
+func handle404(w http.ResponseWriter, currentDir string) {
+	notFoundPath := filepath.Join(currentDir, "404.html")
+	notFoundFile, err := os.Open(notFoundPath)
 	if err != nil {
-		http.Error(w, "请选择图片文件", http.StatusBadRequest)
+		http.Error(w, "404 Not Found", http.StatusNotFound)
 		return
 	}
-	defer file.Close()
+	defer notFoundFile.Close()
 
-	ext := path.Ext(handler.Filename)
-	if ext == "" || !isImage(ext) {
-		http.Error(w, "仅支持图片格式", http.StatusBadRequest)
-		return
-	}
-
-	// 生成时间戳文件名（精确到毫秒）
-	ts := fmt.Sprintf("%d", time.Now().UnixMilli())
-	filename := fmt.Sprintf("%s%s", ts, ext)
-	dstPath := "files/" + filename
-
-	// 保存文件
-	dst, err := os.Create(dstPath)
+	data, err := io.ReadAll(notFoundFile)
 	if err != nil {
-		http.Error(w, "保存失败", http.StatusInternalServerError)
-		return
-	}
-	defer dst.Close()
-
-	_, err = io.Copy(dst, file)
-	if err != nil {
-		http.Error(w, "保存失败", http.StatusInternalServerError)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
-	// 重定向到图片查看页面
-	http.Redirect(w, r, fmt.Sprintf("/%s", filename), http.StatusSeeOther)
+	w.WriteHeader(http.StatusNotFound)
+	w.Write(data)
 }
 
-// 图片查看处理
-func imageHandler(w http.ResponseWriter, r *http.Request) {
-	filename := r.URL.Path[len("/"):]
-	if filename == "" {
-		http.NotFound(w, r)
-		return
+// 判断扩展名是否为允许的图片类型
+func isAllowedExtension(ext string) bool {
+	extList := strings.Split(allowedExts, "|")
+	for _, e := range extList {
+		if ext == e {
+			return true
+		}
 	}
-
-	filePath := filepath.Join("files", filename)
-	file, err := os.Open(filePath)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	defer file.Close()
-
-	http.ServeContent(w, r, filename, time.Now(), file)
-}
-
-// 检查是否为图片格式
-func isImage(ext string) bool {
-	ext = strings.ToLower(ext)
-	return ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".gif" || ext == ".webp"
+	return false
 }
